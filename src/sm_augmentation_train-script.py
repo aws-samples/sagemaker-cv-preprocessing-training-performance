@@ -48,7 +48,6 @@ def augmentation_pytorch_dataloader(train_dir, batch_size, workers, is_distribut
     aug_ops = [
             transforms.RandomHorizontalFlip(),
             transforms.RandomVerticalFlip(),
-            #TODO: Uncomment once DALI operation errors are fixed
             #transforms.RandomRotation(5),
             #transforms.Pad(4),
             #transforms.GaussianBlur(kernel_size, sigma=(0.1, 2.0)),
@@ -70,7 +69,6 @@ def augmentation_pytorch_dataloader(train_dir, batch_size, workers, is_distribut
 
     data_transforms = {
         'train': transforms.Compose(train_aug_ops + crop_norm_ops),
-        #'val': transforms.Compose(val_aug_ops),
         'val': transforms.Compose(crop_norm_ops),
     }
     
@@ -105,22 +103,20 @@ def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu, i
     
     dali_device = 'cpu' if dali_cpu else 'gpu'
     
-    decoder_device = 'cpu' if dali_cpu else 'mixed'
-    device_memory_padding = 211025920 if decoder_device == 'mixed' else 0
-    host_memory_padding = 140544512 if decoder_device == 'mixed' else 0
-    
+    '''
+    For jpeg images, “mixed” backend uses the nvJPEG library. If hardware is available, operator will use dedicated hardware decoder.
+    For jpeg images, “cpu” backend uses libjpeg-turbo
+    Other image formats are decoded with OpenCV or other specific libraries, such as libtiff. 
+    '''
     images = fn.decoders.image(images,
-                               device=decoder_device,
+                               device= 'cpu' if dali_cpu else 'mixed' ,
                                output_type=types.RGB,
-                               device_memory_padding=device_memory_padding,
-                               host_memory_padding=host_memory_padding)
+                               memory_stats=True)
     
     if is_training:
         
         # Repeating Augmentation to influence bottleneck
         for x in range (aug_load):
-            
-            
             #https://docs.nvidia.com/deeplearning/dali/user-guide/docs/supported_ops.html
             images = fn.flip(images, device=dali_device, horizontal=1, vertical=1)
             
@@ -212,9 +208,9 @@ def run_training_epochs(model_ft, num_epochs, criterion, optimizer_ft,
     best_model_wts = copy.deepcopy(model_ft.state_dict())
     best_acc = 0.0
 
+    total_epoch_time = 0
     for epoch in range(num_epochs):
         print('Running Epoch {}/{}'.format(epoch+1, num_epochs))
-        print('-' * 20)
         
         epoch_start_time = time.time()
 
@@ -284,11 +280,17 @@ def run_training_epochs(model_ft, num_epochs, criterion, optimizer_ft,
             epoch_time_elapsed // 60, epoch_time_elapsed % 60))
         print()
         
+        total_epoch_time = total_epoch_time + epoch_time_elapsed
+        
         # uncomment this if using G4 instances with DALI-GPU
         
         #if not USE_PYTORCH:
         #    for phase in ['train', 'val']:
         #        dataloaders[phase].reset()
+    
+    print('-' * 25)
+    print('Seconds per Epoch: {:.2f}'.format(total_epoch_time/ num_epochs))
+    print('-' * 25)
     
     # load best model weights
     model_ft.load_state_dict(best_model_wts)
@@ -395,14 +397,22 @@ def training(args):
                                              device,
                                              USE_PYTORCH)
     time_elapsed = time.time() - since
+    
+    #print ('Model: ', args.pretrained_model_type)
+    #print ('Batch Size: ', batch_size)
+    #print ('Augmentation Operator: ', args.aug)
+    #print ('Augmentation Load: ', aug_load)
+    #print ('Instance: ', INSTANCE_TYPE)
+    
     print('Training complete in {:.0f}m {:.0f}s'.format(
         time_elapsed // 60, time_elapsed % 60))
     print('Best val Acc: {:4f}'.format(best_acc))
+    
 
     # Saving model
-    logger.info("Saving the model.")
-    path = os.path.join(args.model_dir, 'model.pth')
-    torch.save(model_ft.cpu().state_dict(), path)
+    logger.info("NOT Saving the model.")
+    #path = os.path.join(args.model_dir, 'model.pth')
+    #torch.save(model_ft.cpu().state_dict(), path)
     
     
 if __name__ == '__main__':
