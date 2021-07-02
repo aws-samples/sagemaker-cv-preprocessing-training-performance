@@ -34,12 +34,13 @@ logger.addHandler(logging.StreamHandler(sys.stdout))
 
 Image.MAX_IMAGE_PIXELS = None
 
+#GLOBAL_COUNT = {'decode':0, 'augmentation':0}
 
 """
 Method to augment and load data on CPU with PyTorch Dataloader
 """
 
-def augmentation_pytorch_dataloader(train_dir, batch_size, workers, is_distributed, use_cuda, aug_load):
+def augmentation_pytorch_dataloader(train_dir, batch_size, workers, is_distributed, use_cuda, aug_load_factor):
     
     
     print ("Image augmentation using PyTorch Dataloaders on CPUs")
@@ -48,11 +49,9 @@ def augmentation_pytorch_dataloader(train_dir, batch_size, workers, is_distribut
     aug_ops = [
             transforms.RandomHorizontalFlip(),
             transforms.RandomVerticalFlip(),
-            #transforms.RandomRotation(5),
-            #transforms.Pad(4),
-            #transforms.GaussianBlur(kernel_size, sigma=(0.1, 2.0)),
-            #transforms.RandomAutocontrast(),
-            #transforms.functional.affine()
+            transforms.RandomRotation(5),
+            transforms.Pad(4),
+            transforms.RandomAutocontrast()
     ]
     
     crop_norm_ops = [
@@ -64,7 +63,7 @@ def augmentation_pytorch_dataloader(train_dir, batch_size, workers, is_distribut
     
     train_aug_ops = []
     # Repeating Augmentation to influence bottleneck
-    for iteration in range (aug_load):
+    for iteration in range (aug_load_factor):
         train_aug_ops = train_aug_ops + aug_ops
 
     data_transforms = {
@@ -92,7 +91,7 @@ Method to augment and load data on CPU or GPU with NVIDIA DALI
 """
 
 @pipeline_def
-def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu, is_training, aug_load):
+def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu, is_training, aug_load_factor):
     
     images, labels = fn.readers.file(file_root=data_dir,
                                      shard_id=shard_id,
@@ -108,25 +107,60 @@ def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu, i
     For jpeg images, “cpu” backend uses libjpeg-turbo
     Other image formats are decoded with OpenCV or other specific libraries, such as libtiff. 
     '''
+    #decode_time_start = time.time()
+    
+
+    #ValueError: An operator with device='cpu' cannot accept GPU inputs.
+    #decoder_device = 'mixed' 
+    
+    '''
+    if dali_cpu:
+        decoder_device = 'cpu'
+        device_memory_padding = 0
+        host_memory_padding = 0
+        
+    else:
+        decoder_device = 'mixed'
+        device_memory_padding = 134217728 # (134MB) # default — 16777216 (16MB)
+        host_memory_padding = 8388608 # (8MB) — default 8388608 (8MB)
+    
     images = fn.decoders.image(images,
-                               device= 'cpu' if dali_cpu else 'mixed' ,
+                               device= decoder_device,
                                output_type=types.RGB,
+                               device_memory_padding=device_memory_padding,
+                               host_memory_padding=host_memory_padding,
+                               memory_stats=True)
+    '''
+        
+    decoder_device = 'cpu' if dali_cpu else 'mixed'
+    images = fn.decoders.image(images,
+                               device= decoder_device,
+                               output_type=types.RGB,
+                               #device_memory_padding=device_memory_padding,
+                               #host_memory_padding=host_memory_padding,
                                memory_stats=True)
     
+    #decode_time = time.time() - decode_time_start
+    #aug_time_start = time.time()
     if is_training:
         
         # Repeating Augmentation to influence bottleneck
-        for x in range (aug_load):
+        for x in range (aug_load_factor):
             #https://docs.nvidia.com/deeplearning/dali/user-guide/docs/supported_ops.html
             images = fn.flip(images, device=dali_device, horizontal=1, vertical=1)
-            
-            #TODO: Fix operation errors
-            #images = fn.rotate(images, angle=5, device=dali_device)
-            #images = fn.pad(images, device=dali_device)
-            #images = fn.gaussian_blur(images, device=dali_device)
-            #images = fn.contrast(images, device=dali_device)
-            #images = fn.warp_affine(images, device=dali_device)
+            images = fn.rotate(images, angle=5, device=dali_device)
+            images = fn.pad(images, device=dali_device)
+            images = fn.contrast(images, device=dali_device)
         
+    images = fn.random_resized_crop(images, size = size, device=dali_device)
+    images = fn.crop_mirror_normalize(images,
+                                      dtype=types.FLOAT,
+                                      output_layout="CHW",
+                                      crop=(crop, crop),
+                                      mean=[0.485 * 255,0.456 * 255,0.406 * 255],
+                                      std=[0.229 * 255,0.224 * 255,0.225 * 255])
+    
+    '''
     images = fn.random_resized_crop(images, 
                                     size = size, 
                                     device=dali_device,
@@ -135,18 +169,28 @@ def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu, i
                                     num_attempts=100,
                                     interp_type=types.INTERP_TRIANGULAR)
 
-    images = fn.crop_mirror_normalize(images,
+    #TODO: 
+    #TODO: 
+    images = fn.crop_mirror_normalize(images.gpu(),
                                       dtype=types.FLOAT,
                                       output_layout="CHW",
                                       crop=(crop, crop),
                                       mean=[0.485 * 255,0.456 * 255,0.406 * 255],
                                       std=[0.229 * 255,0.224 * 255,0.225 * 255])
+                                      
+    '''
+    #aug_time = time.time() - aug_time_start
+
+    #GLOBAL_COUNT['decode'] = GLOBAL_COUNT['decode'] + decode_time
+    #GLOBAL_COUNT['augmentation'] = GLOBAL_COUNT['augmentation'] + aug_time
+    #print ("--->", GLOBAL_COUNT)
+    
     images = images.gpu()
     labels = labels.gpu()
     
     return images, labels
-
-def augmentation_dali(train_dir, batch_size, workers, is_distributed, use_cuda, host_rank, world_size, aug_load, dali_cpu):
+    
+def augmentation_dali(train_dir, batch_size, workers, is_distributed, use_cuda, host_rank, world_size, aug_load_factor, dali_cpu):
     
     if dali_cpu:
         print ("Image augmentation using DALI pipelines on CPUs")
@@ -161,7 +205,7 @@ def augmentation_dali(train_dir, batch_size, workers, is_distributed, use_cuda, 
     train_pipe = create_dali_pipeline(batch_size=batch_size,
                                             num_threads=workers,
                                             device_id=host_rank,
-                                            seed=12 + host_rank,
+                                            seed=seed,
                                             data_dir=train_path,
                                             crop=224,
                                             size=256,
@@ -169,19 +213,18 @@ def augmentation_dali(train_dir, batch_size, workers, is_distributed, use_cuda, 
                                             shard_id=host_rank,
                                             num_shards=world_size,
                                             is_training=True,
-                                            aug_load=aug_load)
+                                            aug_load_factor=aug_load_factor)
     train_pipe.build()
     dataloaders['train'] = DALIClassificationIterator(train_pipe, 
                                                   reader_name="Reader", 
                                                   last_batch_policy=LastBatchPolicy.PARTIAL)
-
-    # validation data
+    
     val_path = train_dir+'/val/'
     dataset_sizes['val'] = sum([len(files) for r, d, files in os.walk(val_path)])
     val_pipe = create_dali_pipeline(batch_size=batch_size,
                                             num_threads=workers,
                                             device_id=host_rank,
-                                            seed=12 + host_rank,
+                                            seed=seed,
                                             data_dir=val_path,
                                             crop=224,
                                             size=256,
@@ -189,12 +232,11 @@ def augmentation_dali(train_dir, batch_size, workers, is_distributed, use_cuda, 
                                             shard_id=host_rank,
                                             num_shards=world_size,
                                             is_training=False,
-                                            aug_load=aug_load)
+                                            aug_load_factor=aug_load_factor)
     val_pipe.build()
     dataloaders['val'] = DALIClassificationIterator(val_pipe, 
                                                   reader_name="Reader", 
                                                   last_batch_policy=LastBatchPolicy.PARTIAL)
-        
     return dataloaders, dataset_sizes
     
 
@@ -224,16 +266,13 @@ def run_training_epochs(model_ft, num_epochs, criterion, optimizer_ft,
             
             running_loss = 0.0
             running_corrects = 0
-                    
+
             # Data iteration if using DALI Pipelines for loading the augmented data
             if not USE_PYTORCH:
     
                 for i, data in enumerate(dataloaders[phase]):
                     inputs = data[0]["data"]
                     labels = data[0]["label"].squeeze(-1).long()
-                    
-                    #inputs = inputs.to(device) #todo commented earlier
-                    #labels = labels.to(device) #todo commented earlier
 
                     optimizer_ft.zero_grad()
                     with torch.set_grad_enabled(phase == 'train'):
@@ -276,21 +315,17 @@ def run_training_epochs(model_ft, num_epochs, criterion, optimizer_ft,
                 best_model_wts = copy.deepcopy(model_ft.state_dict())
          
         epoch_time_elapsed = time.time() - epoch_start_time
-        print('Epoch completed in {:.0f}m {:.0f}s'.format(
-            epoch_time_elapsed // 60, epoch_time_elapsed % 60))
-        print()
-        
+        print('Epoch completed in {:.2f}s'.format(epoch_time_elapsed))
         total_epoch_time = total_epoch_time + epoch_time_elapsed
         
-        # uncomment this if using G4 instances with DALI-GPU
-        
-        #if not USE_PYTORCH:
-        #    for phase in ['train', 'val']:
-        #        dataloaders[phase].reset()
+        if not USE_PYTORCH:
+            for phase in ['train', 'val']:
+                dataloaders[phase].reset()
     
     print('-' * 25)
     print('Seconds per Epoch: {:.2f}'.format(total_epoch_time/ num_epochs))
     print('-' * 25)
+    
     
     # load best model weights
     model_ft.load_state_dict(best_model_wts)
@@ -337,7 +372,7 @@ def training(args):
     
     workers = os.cpu_count() if use_cuda else 0
                                
-    aug_load = args.aug_load
+    aug_load_factor = args.aug_load_factor
     
     # Image augmentation using DALI pipelines on GPUs
     USE_PYTORCH = False
@@ -358,7 +393,7 @@ def training(args):
                                                                      workers, 
                                                                      is_distributed, 
                                                                      use_cuda,
-                                                                     aug_load)
+                                                                     aug_load_factor)
     else:
         dataloaders, dataset_sizes = augmentation_dali(train_dir, 
                                                    batch_size,
@@ -367,12 +402,12 @@ def training(args):
                                                    use_cuda, 
                                                    host_rank, 
                                                    world_size,  
-                                                   aug_load,
+                                                   aug_load_factor,
                                                    dali_cpu=USE_DALI_CPU)
         
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
-    if args.pretrained_model_type == 'RESENT18':
+    if args.model_type == 'RESENT18':
         model_ft = models.resnet18(pretrained=False)
     else:
         model_ft = models.resnet50(pretrained=False)
@@ -398,12 +433,6 @@ def training(args):
                                              USE_PYTORCH)
     time_elapsed = time.time() - since
     
-    #print ('Model: ', args.pretrained_model_type)
-    #print ('Batch Size: ', batch_size)
-    #print ('Augmentation Operator: ', args.aug)
-    #print ('Augmentation Load: ', aug_load)
-    #print ('Instance: ', INSTANCE_TYPE)
-    
     print('Training complete in {:.0f}m {:.0f}s'.format(
         time_elapsed // 60, time_elapsed % 60))
     print('Best val Acc: {:4f}'.format(best_acc))
@@ -420,20 +449,20 @@ if __name__ == '__main__':
 
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+    parser.add_argument('--epochs', type=int, default=2, metavar='N',
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                         help='SGD momentum (default: 0.5)')
     parser.add_argument('--seed', type=int, default=42, metavar='S',
-                        help='random seed (default: 1)')
+                        help='random seed (default: 42)')
     
-    parser.add_argument('--pretrained-model-type', type=str, default=None,
+    parser.add_argument('--model-type', type=str, default=None,
                         help='Pre-trained model architecture to start training from')
     
     parser.add_argument('--aug', type=str, default=None, help='Hardcoded to expect either: pytorch-cpu, dali-cpu, or dali-gpu')
-    parser.add_argument('--aug-load', type=int, default=1, help='Number of times Augmentation should be repeated to create bottleneck')
+    parser.add_argument('--aug-load-factor', type=int, default=1, help='Number of times Augmentation should be repeated to create bottleneck')
     
     parser.add_argument('--backend', type=str, default=None,
                         help='backend for distributed training (tcp, gloo on cpu and gloo, nccl on gpu)')
