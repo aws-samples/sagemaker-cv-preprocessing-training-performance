@@ -1,63 +1,42 @@
-import time
 import boto3
-from datetime import datetime
 import json 
 import pandas as pd
-from IPython.display import FileLink
 from smdebug.profiler.system_metrics_reader import S3SystemMetricsReader
 from smdebug.profiler.algorithm_metrics_reader import S3AlgorithmMetricsReader
 from smdebug.profiler.analysis.notebook_utils.metrics_histogram import MetricsHistogram
 from smdebug.profiler.analysis.notebook_utils.heatmap import Heatmap
 
+"""
+Method to get system metrics for the training job
+"""
+
+
 def get_sys_metric(train_estimator, instance_type):
-    
+    path = train_estimator.latest_job_profiler_artifacts_path()
+    system_metrics_reader = S3SystemMetricsReader(path)    
+    framework_metrics_reader = S3AlgorithmMetricsReader(path)
+
+    """
+    Metric histograms and Heatmaps of system usage
+    """
+
+    # Number of CPUs and GPUs for plotting metric histograms and heatmaps
+    # Default for 'ml.p3.8xlarge'
     NUM_CPU = 8
     NUM_GPU = 1
-    
     if instance_type == 'ml.p3.8xlarge':
         NUM_CPU = 32
         NUM_GPU = 4
-    
     if instance_type == 'ml.g4.12xlarge':
         NUM_CPU = 48
         NUM_GPU = 4
-    
     if instance_type == 'ml.g4.16xlarge':
         NUM_CPU = 64
         NUM_GPU = 1
-
-    path = train_estimator.latest_job_profiler_artifacts_path()
-    
-    system_metrics_reader = S3SystemMetricsReader(path)
-    
-    '''
-    sagemaker_client = boto3.client("sagemaker")
-    training_job_name = train_estimator.latest_training_job.name
-
-    
-    training_job_status = ""
-    training_job_secondary_status = ""
-    while system_metrics_reader.get_timestamp_of_latest_available_file() == 0:
-        system_metrics_reader.refresh_event_file_list()
-        client = sagemaker_client.describe_training_job(TrainingJobName=training_job_name)
-        if "TrainingJobStatus" in client:
-            training_job_status = f"TrainingJobStatus: {client['TrainingJobStatus']}"
-        if "SecondaryStatus" in client:
-            training_job_secondary_status = f"TrainingJobSecondaryStatus: {client['SecondaryStatus']}"
-
-        print(
-            f"Profiler data from system not available yet. {training_job_status}. {training_job_secondary_status}."
-        )
-        time.sleep(20)
-
-    print("\n\nProfiler data from system is available")
-    '''
-    
-    framework_metrics_reader = S3AlgorithmMetricsReader(path)
-    
     
     dim_to_plot = ["CPU", "GPU"]
     events_to_plot = []
+
     for x in range(NUM_CPU):
         events_to_plot.append("cpu"+str(x))
     for x in range(NUM_GPU):
@@ -79,10 +58,11 @@ def get_sys_metric(train_estimator, instance_type):
                         select_dimensions=dim_to_plot,
                         select_events=events_to_plot
     )
-    
-    
-    # Getting System Statistics from Profiler
-    
+
+    """
+    Fetching system statistics from profiler report
+    """
+
     profiler_report_name = [
     rule["RuleConfigurationName"]
     for rule in train_estimator.latest_training_job.rule_job_summary()
