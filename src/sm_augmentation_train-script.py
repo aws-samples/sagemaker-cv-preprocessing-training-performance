@@ -34,8 +34,6 @@ logger.addHandler(logging.StreamHandler(sys.stdout))
 
 Image.MAX_IMAGE_PIXELS = None
 
-#GLOBAL_COUNT = {'decode':0, 'augmentation':0}
-
 """
 Method to augment and load data on CPU with PyTorch Dataloader
 """
@@ -45,13 +43,10 @@ def augmentation_pytorch_dataloader(train_dir, batch_size, workers, is_distribut
     
     print ("Image augmentation using PyTorch Dataloaders on CPUs")
     
-    #https://pytorch.org/vision/stable/transforms.html
     aug_ops = [
             transforms.RandomHorizontalFlip(),
             transforms.RandomVerticalFlip(),
-            transforms.RandomRotation(5),
-            transforms.Pad(4),
-            transforms.RandomAutocontrast()
+            transforms.RandomRotation(5)
     ]
     
     crop_norm_ops = [
@@ -100,57 +95,25 @@ def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu, i
                                      pad_last_batch=True,
                                      name="Reader")
     
-    dali_device = 'cpu' if dali_cpu else 'gpu'
-    
     '''
     For jpeg images, “mixed” backend uses the nvJPEG library. If hardware is available, operator will use dedicated hardware decoder.
     For jpeg images, “cpu” backend uses libjpeg-turbo
     Other image formats are decoded with OpenCV or other specific libraries, such as libtiff. 
     '''
-    #decode_time_start = time.time()
     
-
-    #ValueError: An operator with device='cpu' cannot accept GPU inputs.
-    #decoder_device = 'mixed' 
-    
-    '''
-    if dali_cpu:
-        decoder_device = 'cpu'
-        device_memory_padding = 0
-        host_memory_padding = 0
-        
-    else:
-        decoder_device = 'mixed'
-        device_memory_padding = 134217728 # (134MB) # default — 16777216 (16MB)
-        host_memory_padding = 8388608 # (8MB) — default 8388608 (8MB)
-    
-    images = fn.decoders.image(images,
-                               device= decoder_device,
-                               output_type=types.RGB,
-                               device_memory_padding=device_memory_padding,
-                               host_memory_padding=host_memory_padding,
-                               memory_stats=True)
-    '''
-        
+    dali_device = 'cpu' if dali_cpu else 'gpu'
     decoder_device = 'cpu' if dali_cpu else 'mixed'
+    
     images = fn.decoders.image(images,
                                device= decoder_device,
                                output_type=types.RGB,
-                               #device_memory_padding=device_memory_padding,
-                               #host_memory_padding=host_memory_padding,
                                memory_stats=True)
-    
-    #decode_time = time.time() - decode_time_start
-    #aug_time_start = time.time()
     if is_training:
         
         # Repeating Augmentation to influence bottleneck
         for x in range (aug_load_factor):
-            #https://docs.nvidia.com/deeplearning/dali/user-guide/docs/supported_ops.html
             images = fn.flip(images, device=dali_device, horizontal=1, vertical=1)
             images = fn.rotate(images, angle=5, device=dali_device)
-            images = fn.pad(images, device=dali_device)
-            images = fn.contrast(images, device=dali_device)
         
     images = fn.random_resized_crop(images, size = size, device=dali_device)
     images = fn.crop_mirror_normalize(images,
@@ -159,38 +122,12 @@ def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu, i
                                       crop=(crop, crop),
                                       mean=[0.485 * 255,0.456 * 255,0.406 * 255],
                                       std=[0.229 * 255,0.224 * 255,0.225 * 255])
-    
-    '''
-    images = fn.random_resized_crop(images, 
-                                    size = size, 
-                                    device=dali_device,
-                                    random_aspect_ratio=[0.8, 1.25],
-                                    random_area=[0.1, 1.0],
-                                    num_attempts=100,
-                                    interp_type=types.INTERP_TRIANGULAR)
-
-    #TODO: 
-    #TODO: 
-    images = fn.crop_mirror_normalize(images.gpu(),
-                                      dtype=types.FLOAT,
-                                      output_layout="CHW",
-                                      crop=(crop, crop),
-                                      mean=[0.485 * 255,0.456 * 255,0.406 * 255],
-                                      std=[0.229 * 255,0.224 * 255,0.225 * 255])
-                                      
-    '''
-    #aug_time = time.time() - aug_time_start
-
-    #GLOBAL_COUNT['decode'] = GLOBAL_COUNT['decode'] + decode_time
-    #GLOBAL_COUNT['augmentation'] = GLOBAL_COUNT['augmentation'] + aug_time
-    #print ("--->", GLOBAL_COUNT)
-    
     images = images.gpu()
     labels = labels.gpu()
     
     return images, labels
     
-def augmentation_dali(train_dir, batch_size, workers, is_distributed, use_cuda, host_rank, world_size, aug_load_factor, dali_cpu):
+def augmentation_dali(train_dir, batch_size, workers, is_distributed, use_cuda, host_rank, world_size, seed, aug_load_factor, dali_cpu):
     
     if dali_cpu:
         print ("Image augmentation using DALI pipelines on CPUs")
@@ -311,21 +248,14 @@ def run_training_epochs(model_ft, num_epochs, criterion, optimizer_ft,
 
             # deep copy the model
             if phase == 'val' and epoch_acc > best_acc:
-                best_acc = epoch_acc
                 best_model_wts = copy.deepcopy(model_ft.state_dict())
          
         epoch_time_elapsed = time.time() - epoch_start_time
         print('Epoch completed in {:.2f}s'.format(epoch_time_elapsed))
         total_epoch_time = total_epoch_time + epoch_time_elapsed
-        
-        if not USE_PYTORCH:
-            for phase in ['train', 'val']:
-                dataloaders[phase].reset()
     
     print('-' * 25)
     print('Seconds per Epoch: {:.2f}'.format(total_epoch_time/ num_epochs))
-    print('-' * 25)
-    
     
     # load best model weights
     model_ft.load_state_dict(best_model_wts)
@@ -374,15 +304,12 @@ def training(args):
                                
     aug_load_factor = args.aug_load_factor
     
-    # Image augmentation using DALI pipelines on GPUs
     USE_PYTORCH = False
     USE_DALI_CPU = False
     
-    # Image augmentation using PyTorch Dataloaders on CPUs
     if args.aug == 'pytorch-cpu':
         USE_PYTORCH = True
         
-    # Image augmentation using DALI pipelines on CPUs
     if args.aug == 'dali-cpu':
         USE_DALI_CPU = True
     
@@ -402,16 +329,23 @@ def training(args):
                                                    use_cuda, 
                                                    host_rank, 
                                                    world_size,  
+                                                   seed,
                                                    aug_load_factor,
                                                    dali_cpu=USE_DALI_CPU)
         
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
-    if args.model_type == 'RESENT18':
+    if args.model_type == 'RESNET18':
         model_ft = models.resnet18(pretrained=False)
-    else:
+    elif args.model_type == 'RESNET50':
         model_ft = models.resnet50(pretrained=False)
+    elif args.model_type == 'RESNET152':
+        model_ft = models.resnet152(pretrained=False)
+    else:
+        sys.exit('Requested Model not found')
+        
     model_ft = model_ft.to(device)
+    
     if is_distributed and use_cuda:
         model_ft = torch.nn.parallel.DistributedDataParallel(model_ft)
     else:
@@ -433,16 +367,12 @@ def training(args):
                                              USE_PYTORCH)
     time_elapsed = time.time() - since
     
-    print('Training complete in {:.0f}m {:.0f}s'.format(
-        time_elapsed // 60, time_elapsed % 60))
-    print('Best val Acc: {:4f}'.format(best_acc))
-    
-
-    # Saving model
-    logger.info("NOT Saving the model.")
-    #path = os.path.join(args.model_dir, 'model.pth')
-    #torch.save(model_ft.cpu().state_dict(), path)
-    
+    print('-' * 25)
+    print ("Model — ", args.model_type)
+    print ("Augmentation Approach — ", args.aug)
+    print ("Batch Size — ", batch_size)
+    print ("Augmentation Load factor — ", aug_load_factor)
+    print('-' * 25)
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -459,7 +389,7 @@ if __name__ == '__main__':
                         help='random seed (default: 42)')
     
     parser.add_argument('--model-type', type=str, default=None,
-                        help='Pre-trained model architecture to start training from')
+                        help='Model architecture to train')
     
     parser.add_argument('--aug', type=str, default=None, help='Hardcoded to expect either: pytorch-cpu, dali-cpu, or dali-gpu')
     parser.add_argument('--aug-load-factor', type=int, default=1, help='Number of times Augmentation should be repeated to create bottleneck')
