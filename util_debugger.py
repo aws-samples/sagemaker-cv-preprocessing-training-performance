@@ -21,6 +21,10 @@ def get_sys_metric(train_estimator, instance_type):
     if instance_type == 'ml.g4.12xlarge':
         NUM_CPU = 48
         NUM_GPU = 4
+    
+    if instance_type == 'ml.g4.16xlarge':
+        NUM_CPU = 64
+        NUM_GPU = 1
 
     path = train_estimator.latest_job_profiler_artifacts_path()
     

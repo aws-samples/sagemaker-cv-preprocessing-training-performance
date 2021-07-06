@@ -22,7 +22,7 @@ def aug_exp_train(model_arch, batch_size, aug_operator, aug_load_factor, instanc
     profiler_config = ProfilerConfig(
             system_monitor_interval_millis = 100,
             #num_steps = num_train_images / batch_size
-            framework_profile_params = FrameworkProfile(start_step = 1, num_steps = 148)
+            framework_profile_params = FrameworkProfile(start_step = 1, num_steps = 296)
     )
     
     train_estimator = PyTorch(entry_point = 'sm_augmentation_train-script.py',
@@ -46,7 +46,7 @@ def aug_exp_train(model_arch, batch_size, aug_operator, aug_load_factor, instanc
                                                 'lr': 0.001,
                                                 'batch-size': batch_size,
                                                 'aug': aug_operator,
-                                                'aug-load': aug_load_factor
+                                                'aug-load-factor': aug_load_factor
                             }
     )
     
