@@ -1,4 +1,4 @@
-# amazon-sagemaker-training-augmentations
+# sagemaker-cv-preprocessing-training-performance
 
 This repository contains implementation of data pre-processing on both GPUs and CPUs for computer vision — allowing you to reduce Amazon SageMaker training time (thus improving performance-cost ratio) by addressing CPU bottlenecks caused by increasing data pre-processing load. This is achieved by moving JPEG image decoding and augmentation load to GPU by using [NVIDIA DALI](https://pytorch.org/tutorials/beginner/basics/data_tutorial.html). It also allows you to visualize system utilizations using Amazon Sagemaker Debugger for identifying bottlenecks.
 
