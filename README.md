@@ -11,7 +11,7 @@ This repository contains [Amazon SageMaker](https://aws.amazon.com/sagemaker/) t
 - `util_debugger.py`: Extract system utilization metrics with [SageMaker Debugger](https://sagemaker.readthedocs.io/en/stable/amazon_sagemaker_debugger.html).
 
 ## Run SageMaker training job with decoding and augmentation on GPU:
-- Parameters such as training data path, S3 bucket, Epochs and other training hyperparameters can be adapted at `util_train.py`. 
+- Parameters such as training data path, S3 bucket, epochs and other training hyperparameters can be adapted at `util_train.py`. 
 - The custom custom training script used is  `src/sm_augmentation_train-script.py`.
 ```
 from util_debugger import get_sys_metric
@@ -33,8 +33,8 @@ aug_exp_train(model_arch = 'RESNET50',
   -  `aug_load_factor` (default: `12`)
   -  `AUGMENTATION_APPROACHES` (default: `['pytorch-cpu', 'dali-gpu']`)
 - Comparison results using the above default parameter setup:
-  - Seconds/ Epoch improvement of 72.59% in Amazon SageMaker training job by offloading JPEG decoding and heavy augmentation to GPU — addressing data pre-processing bottleneck to improve performance-cost ratio.
-  - Using the above strategy, training time improvement is higher for lighter models like `RESNET-18` (which causes more CPU bottlenecks) over heavier model such as `RESNET-152` as the `aug_load_factor` is increased from `1` to `12`, while keeping lower batch size of `32`.
+  - Seconds/ Epoch improvement of `72.59%` in Amazon SageMaker training job by offloading JPEG decoding and heavy augmentation to GPU — addressing data pre-processing bottleneck to improve performance-cost ratio.
+  - Using the above strategy, training time improvement is higher for lighter models like `RESNET-18` (which causes more CPU bottlenecks) over heavier model such as `RESNET-152` as the `aug_load_factor` is increased while keeping lower batch size of `32`.
   - System utilization Histograms and CPU bottleneck Heatmaps are generated with SageMaker Debugger in the notebook. Profiler Report and other interactive visuals available on SageMaker Studio.
 
 
