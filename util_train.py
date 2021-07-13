@@ -3,11 +3,10 @@ from sagemaker.pytorch import PyTorch
 from datetime import datetime
 
 
-def aug_exp_train(model_arch, batch_size, aug_operator, aug_load_factor, instance_type):
-    CURR_SM_ROLE = 'arn:aws:iam::154108359553:role/service-role/AmazonSageMaker-ExecutionRole-20210203T120788'
+def aug_exp_train(model_arch, batch_size, aug_operator, aug_load_factor, instance_type, sm_role):
 
     # Amazon S3 bucket and prefix for fetching and storing data:
-    BUCKET = 'dali-test'
+    BUCKET = 'sm-aug-test'
 
     # Full size download of https://github.com/fastai/imagenette
     # 1.3GB — 13,395 (9469 train, 3925 val images) from 10 classes
@@ -18,7 +17,7 @@ def aug_exp_train(model_arch, batch_size, aug_operator, aug_load_factor, instanc
     # Encapsulate training on SageMaker with PyTorch:
     train_estimator = PyTorch(entry_point='sm_augmentation_train-script.py',
                               source_dir='./src',
-                              role=CURR_SM_ROLE,
+                              role=sm_role,
                               framework_version='1.8.1',
                               py_version='py3',
                               debugger_hook_config=False,

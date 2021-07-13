@@ -11,7 +11,7 @@ Method to get system metrics for the training job
 """
 
 
-def get_sys_metric(train_estimator, instance_type):
+def get_sys_metric(train_estimator, num_cpu, num_gpu):
     path = train_estimator.latest_job_profiler_artifacts_path()
     system_metrics_reader = S3SystemMetricsReader(path)    
     framework_metrics_reader = S3AlgorithmMetricsReader(path)
@@ -19,27 +19,13 @@ def get_sys_metric(train_estimator, instance_type):
     """
     Metric histograms and Heatmaps of system usage
     """
-
-    # Number of CPUs and GPUs for plotting metric histograms and heatmaps
-    # Default for 'ml.p3.8xlarge'
-    NUM_CPU = 8
-    NUM_GPU = 1
-    if instance_type == 'ml.p3.8xlarge':
-        NUM_CPU = 32
-        NUM_GPU = 4
-    if instance_type == 'ml.g4.12xlarge':
-        NUM_CPU = 48
-        NUM_GPU = 4
-    if instance_type == 'ml.g4.16xlarge':
-        NUM_CPU = 64
-        NUM_GPU = 1
     
     dim_to_plot = ["CPU", "GPU"]
     events_to_plot = []
 
-    for x in range(NUM_CPU):
+    for x in range(num_cpu):
         events_to_plot.append("cpu"+str(x))
-    for x in range(NUM_GPU):
+    for x in range(num_gpu):
         events_to_plot.append("gpu"+str(x))
         
     system_metrics_reader.refresh_event_file_list()
@@ -84,8 +70,8 @@ def get_sys_metric(train_estimator, instance_type):
 
     cpu_usage = sys_usage["Details"]["CPU"]["algo-1"]
     gpu_usage = sys_usage["Details"]["GPU"]["algo-1"]
-    sys_util_data = [['CPU', NUM_CPU, cpu_usage["p50"], cpu_usage["p95"], cpu_usage["p99"]], 
-                        ['GPU', NUM_GPU, gpu_usage["p50"], gpu_usage["p95"], gpu_usage["p99"]],
+    sys_util_data = [['CPU', num_cpu, cpu_usage["p50"], cpu_usage["p95"], cpu_usage["p99"]], 
+                        ['GPU', num_gpu, gpu_usage["p50"], gpu_usage["p95"], gpu_usage["p99"]],
     ]
     sys_util_df = pd.DataFrame(sys_util_data, columns = ['Metric', '#', 'p50', 'p95', 'p99'])
     
