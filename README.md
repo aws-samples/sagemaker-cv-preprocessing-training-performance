@@ -22,6 +22,7 @@ aug_exp_train(model_arch = 'RESNET50',
               instance_type='ml.p3.2xlarge',  
               curr_sm_role = 'to-be-added')
 ```
+- Note that this implementation at the moment is optimized for single-GPU training to address multi-core CPU bottlenecks. The [DALI Decoder operation](https://docs.nvidia.com/deeplearning/dali/user-guide/docs/supported_ops.html#nvidia.dali.fn.decoders.image) can be updated with improved usage of `device_memory_padding` and` host_memory_padding` for multi-GPU larger instances.
 
 ## Experiment to compare bottlenecks:
 
@@ -36,6 +37,7 @@ aug_exp_train(model_arch = 'RESNET50',
   - Seconds/ Epoch improvement of `72.59%` in Amazon SageMaker training job by offloading JPEG decoding and heavy augmentation to GPU — addressing data pre-processing bottleneck to improve performance-cost ratio.
   - Using the above strategy, training time improvement is higher for lighter models like `RESNET-18` (which causes more CPU bottlenecks) over heavier model such as `RESNET-152` as the `aug_load_factor` is increased while keeping lower batch size of `32`.
   - System utilization Histograms and CPU bottleneck Heatmaps are generated with SageMaker Debugger in the notebook. Profiler Report and other interactive visuals available on SageMaker Studio.
+- Further detailed results (based on different augmentation loads, batch sizes, and model complexities for training on 8-CPUs and 1-GPU) are available on request.
 
 ## Security
 
