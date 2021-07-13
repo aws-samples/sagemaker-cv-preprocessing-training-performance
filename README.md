@@ -1,13 +1,3 @@
-<<<<<<< HEAD
-## My Project
-
-TODO: Fill this README out!
-
-Be sure to:
-
-* Change the title in this README
-* Edit your repository description on GitHub
-=======
 # sagemaker-cv-preprocessing-training-performance
 
 This repository contains [Amazon SageMaker](https://aws.amazon.com/sagemaker/) training implementation with data pre-processing (decoding + augmentations) on both GPUs and CPUs for computer vision — allowing you to compare and reduce training time by addressing CPU bottlenecks caused by increasing data pre-processing load. This is achieved by GPU-accelerated JPEG image decoding and offloading of augmentation to GPUs using [NVIDIA DALI](https://docs.nvidia.com/deeplearning/dali/user-guide/docs/). Performance bottlenecks and ystem utilizations metrics are compared using [Amazon Sagemaker Debugger](https://docs.aws.amazon.com/sagemaker/latest/dg/train-debugger.html).
@@ -47,17 +37,10 @@ aug_exp_train(model_arch = 'RESNET50',
   - Using the above strategy, training time improvement is higher for lighter models like `RESNET-18` (which causes more CPU bottlenecks) over heavier model such as `RESNET-152` as the `aug_load_factor` is increased while keeping lower batch size of `32`.
   - System utilization Histograms and CPU bottleneck Heatmaps are generated with SageMaker Debugger in the notebook. Profiler Report and other interactive visuals available on SageMaker Studio.
 
->>>>>>> r1remote/main
-
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
 
 ## License
 
-<<<<<<< HEAD
 This library is licensed under the MIT-0 License. See the LICENSE file.
-
-=======
-This library is licensed under the MIT-0 License. See the LICENSE file.
->>>>>>> r1remote/main
